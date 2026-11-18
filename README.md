@@ -1,50 +1,43 @@
-# tiny-chess-01 — 4KB Python engine
+# tiny-chess-01 — a 4 KB Python chess engine
 
-A deterministic alpha-beta chess engine that fits the 4,096-byte `main.py`
-budget by shipping the real source **lzma-compressed + base85-encoded** and
-decompressing it at import time.
+`main.py` is a deterministic alpha-beta engine that fits the 4,096-byte entry
+budget by shipping its real source lzma-compressed inside a 3-line stdlib
+loader and decompressing it at import time. Source is ~13 KB of plain Python
+(`engine.py`); no dependencies, standard library only, Python 3.13.
 
-## What is in the engine
+## Engine
 
-- **Negamax + alpha-beta**, iterative deepening 1..6 plies; only fully
-  completed iterations are kept (node budget, never wall-clock, so play is
-  reproducible move for move).
-- **Transposition table** keyed by board string + side to move (depth, score,
-  bound flag, best move) — used both to cut and to order moves.
-- **PVS**: first move full window, siblings null-window with re-search when
-  they raise alpha.
-- **Quiescence search** over captures with MVV-style ordering, so the search
-  never stops mid-exchange.
-- **Evaluation**: material, piece-square tables, bishop pair, rook on
-  open/half-open file, doubled and isolated pawns, small tempo bonus.
-- **Move generation**: pseudo-legal, filtered by a king-attack test, queen
-  promotion, castling rights tracked through the search.
+- **0x88 board** with incremental material + piece-square scores (`SC`),
+  non-pawn material (`NP`), bishop counts, and per-file pawn counts, all
+  maintained by `mk`/`um` so evaluation costs almost nothing per node.
+- **Search**: negamax PVS, iterative deepening 1..N plies, transposition
+  table with mate-distance correction, killer moves, history heuristic,
+  null-move pruning, late-move reductions, check extension and repetition
+  detection.
+- **Quiescence**: captures only, standing pat plus delta pruning, full move
+  ordering (TT move, MVV-LVA, promotions, killers, history).
+- **Evaluation**: material, 7 piece-square tables tapered by phase, bishop
+  pair, doubled/isolated pawns, king safety corner term.
+- **Determinism**: a node budget (`BUD`) replaces wall-clock time, so the
+  same position always yields the same move; no randomness, no threads.
+- Validated by perft against python-chess (start position, Kiwipete and four
+  position-5 style suites, all exact) plus state-by-state diffs.
 
 ## Size budget
 
 | file | bytes | limit |
 |---|---|---|
-| `main.py` (packed) | 3749 | 4096 |
-| repository total | ~6.2 KB | 8192 |
+| `main.py` (packed) | 4068 | 4096 |
+| `LICENSE` | 1104 | 4096 |
+| `README.md` | this file | 4096 |
+| repository total | ~6.6 KB | 8192 |
 
-Unpacked source is ~11.4 KB; the packing wrapper is three lines of stdlib.
+## Protocol
 
-## Local score (6 practice games)
+The engine speaks the kit env protocol on `MAKEFUN_ENV_URL`: `POST /game` to
+start, `POST /move` with `{fen, legal_moves}` to pick a move, and prints one
+line per finished game to stderr. Run the kit env with `main.py` to reproduce.
 
-| version | score | est. Elo |
-|---|---|---|
-| greedy starter | 0/6 | 0 |
-| alpha-beta + PST | 0.5/6 | 775 |
-| + TT + PVS + quiescence | 1.5/6 | 1005 |
-| + node budget 250k | 1.5/6 | 1055 |
+## License
 
-Kit anchors: depth-2 ≈ 855, depth-3 ≈ 1073, depth-4 ≈ 1199, nodes-100k ≈ 1392.
-
-## Reproduce
-
-The engine speaks the env protocol on `MAKEFUN_ENV_URL` (`POST /game`,
-`POST /move`) and prints one line per finished game to stderr:
-
-    game 1: win by checkmate
-
-Run the kit's env + `main.py` for each game to reproduce the table above.
+MIT (see `LICENSE`).
